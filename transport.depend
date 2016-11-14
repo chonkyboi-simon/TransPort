@@ -1,0 +1,132 @@
+# depslib dependency file v1.0
+1477268491 source:/media/tester/SANDISK/tools/SSL_TLS_data_emulator/main.c
+	<stdio.h>
+	<sys/socket.h>
+	<arpa/inet.h>
+	<stdlib.h>
+	<string.h>
+	<unistd.h>
+	<time.h>
+	<fcntl.h>
+	<stdio.h>
+	<sys/time.h>
+	<sys/types.h>
+	<unistd.h>
+
+1479103193 source:/home/tester/tests/SSL_TLS_data_emulator/main.c
+	<stdio.h>
+	<sys/socket.h>
+	<arpa/inet.h>
+	<stdlib.h>
+	<string.h>
+	<unistd.h>
+	<time.h>
+	<fcntl.h>
+	<stdio.h>
+	<sys/time.h>
+	<sys/types.h>
+	<unistd.h>
+	<sys/ioctl.h>
+	<sys/types.h>
+	"tcp_client.h"
+	"tcp_server.h"
+	"console_text_format.h"
+
+1479125500 source:/home/simon/tests/SSL_TLS_data_emulator/main.c
+	<stdio.h>
+	<sys/socket.h>
+	<arpa/inet.h>
+	<stdlib.h>
+	<string.h>
+	<unistd.h>
+	<time.h>
+	<fcntl.h>
+	<stdio.h>
+	<sys/time.h>
+	<sys/types.h>
+	<unistd.h>
+	<sys/ioctl.h>
+	<sys/types.h>
+	"tcp_client.h"
+	"tcp_server.h"
+	"console_text_format.h"
+
+1478945958 /home/simon/tests/SSL_TLS_data_emulator/tcp_client.h
+
+1478956886 /home/simon/tests/SSL_TLS_data_emulator/tcp_server.h
+
+1478954366 /home/simon/tests/SSL_TLS_data_emulator/console_text_format.h
+
+1479036086 source:/home/simon/tests/SSL_TLS_data_emulator/tcp_server.c
+	<stdio.h>
+	<sys/socket.h>
+	<arpa/inet.h>
+	<stdlib.h>
+	<string.h>
+	<unistd.h>
+	<time.h>
+	<fcntl.h>
+	<stdio.h>
+	<sys/time.h>
+	<sys/types.h>
+	<unistd.h>
+	"console_text_format.h"
+
+1479036060 source:/home/simon/tests/SSL_TLS_data_emulator/tcp_client.c
+	<stdio.h>
+	<sys/socket.h>
+	<arpa/inet.h>
+	<stdlib.h>
+	<string.h>
+	<unistd.h>
+	<time.h>
+	<fcntl.h>
+	<stdio.h>
+	<sys/time.h>
+	<sys/types.h>
+	<unistd.h>
+	"console_text_format.h"
+
+1479036060 source:/home/tester/tests/SSL_TLS_data_emulator/tcp_client.c
+	<stdio.h>
+	<sys/socket.h>
+	<arpa/inet.h>
+	<stdlib.h>
+	<string.h>
+	<unistd.h>
+	<time.h>
+	<fcntl.h>
+	<stdio.h>
+	<sys/time.h>
+	<sys/types.h>
+	<unistd.h>
+	"console_text_format.h"
+
+1478954366 /home/tester/tests/SSL_TLS_data_emulator/console_text_format.h
+
+1479036086 source:/home/tester/tests/SSL_TLS_data_emulator/tcp_server.c
+	<stdio.h>
+	<sys/socket.h>
+	<arpa/inet.h>
+	<stdlib.h>
+	<string.h>
+	<unistd.h>
+	<time.h>
+	<fcntl.h>
+	<stdio.h>
+	<sys/time.h>
+	<sys/types.h>
+	<unistd.h>
+	"console_text_format.h"
+
+1478945958 /home/tester/tests/SSL_TLS_data_emulator/tcp_client.h
+
+1478956886 /home/tester/tests/SSL_TLS_data_emulator/tcp_server.h
+
+1479124761 source:/home/simon/tests/SSL_TLS_data_emulator/getch.c
+	<unistd.h>
+	<termios.h>
+	<stdio.h>
+
+1479124453 /home/simon/tests/SSL_TLS_data_emulator/getch.h
+
