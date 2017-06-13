@@ -11,7 +11,7 @@
 				<Option object_output="obj/Debug/" />
 				<Option type="1" />
 				<Option compiler="gcc" />
-				<Option parameters="192.168.1.22 6665 6666" />
+				<Option parameters="127.0.0.1 9000 443 h" />
 				<Compiler>
 					<Add option="-g" />
 				</Compiler>

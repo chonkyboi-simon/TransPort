@@ -19,8 +19,14 @@
 #include "tcp_server.h"
 //#include "getch.h"
 
-#define RX_BUFFER_SIZE 512
-#define TX_BUFFER_SIZE 512
+#define BUFFER_SIZE 16384 //the 2 bytes of length field in the TLS record header stipulates that the maximum TLS record length is 16KB (16384 bytes)
+//#define RX_BUFFER_SIZE 16384
+//#define TX_BUFFER_SIZE 16384
+//TLS record types
+#define TLS_RECORD_TYPE_CHANGE_CIPHER_SPEC  0x14
+#define TLS_RECORD_TYPE_ALERT               0x15
+#define TLS_RECORD_TYPE_HANDSHAKE           0x16
+#define TLS_RECORD_TYPE_APPLICATION_DATA    0x17
 
 #include "console_text_format.h"
 
@@ -42,12 +48,122 @@
 //#define COLOR_BOLDCYAN		"\033[1m\033[36m"	/* Bold Cyan */
 //#define COLOR_BOLDWHITE		"\033[1m\033[37m"	/* Bold White */
 
+struct tls_record_header
+{
+    int tls_record_type;
+    int tls_version;
+    int tls_record_length;
+};
+
+struct tls_record
+{
+    struct tls_record_header header;
+    char * data;
+};
+
+struct tls_record print_TLS_record(char* buffer)
+{
+    int i=0;
+    struct tls_record tls_record;
+    //TLS record header
+    printf(COLOR_RESET);
+    printf("\n-------------------");
+    printf("\nStart of TLS record:");
+    printf("\nTLS record header:");
+    //record type
+    printf(COLOR_BOLDCYAN);
+        printf("\n%02x ", 0x000000FF&buffer[0]);//indicator for TLS record type
+        tls_record.header.tls_record_type=0x000000FF&buffer[0];
+        switch (tls_record.header.tls_record_type)
+        {
+            case TLS_RECORD_TYPE_ALERT:
+                printf("\tAlert\n");
+                break;
+            case TLS_RECORD_TYPE_APPLICATION_DATA:
+                printf("\tApplication data\n");
+                break;
+            case TLS_RECORD_TYPE_CHANGE_CIPHER_SPEC:
+                printf("\tChange cipher spec\n");
+                break;
+            case TLS_RECORD_TYPE_HANDSHAKE:
+                printf("\tHandshake\n");
+                break;
+            default:
+                printf(COLOR_RED);
+                printf("\tUNKNOWN_TLS_RECORD_TYPE\n");
+                printf(COLOR_RESET);
+        }
+    //tls protocol version
+    printf(COLOR_BOLDBLUE);
+        printf("%02x %02x ", 0x000000FF&buffer[1], 0x000000FF&buffer[2]);//indicator for TLS version
+        tls_record.header.tls_version=((0x000000FF&buffer[1])<<8)|(0x000000FF&buffer[2]);
+        switch (tls_record.header.tls_version)
+        {
+            case 0x0300:
+                printf("\tSSL 3.0\n");
+                break;
+            case 0x0301:
+                printf("\tTLS 1.0\n");
+                break;
+            case 0x0302:
+                printf("\tTLS 1.1\n");
+                break;
+            case 0x0303:
+                printf("\tTLS 1.2\n");
+                break;
+            default:
+                printf(COLOR_RED);
+                printf("\tUNKNOWN protocol version!\n");
+                printf(COLOR_RESET);
+        }
+    //record data length
+    printf(COLOR_BOLDGREEN);
+    printf("%02x %02x ", 0x000000FF&buffer[3], 0x000000FF&buffer[4]);//indicator for TLS record data length
+    tls_record.header.tls_record_length=(0x000000FF&buffer[4])|((0x000000FF&buffer[3])<<8);
+    printf("\tRecord data size: 0x%04x %d", tls_record.header.tls_record_length, tls_record.header.tls_record_length);
+    printf(COLOR_RESET);
+    //record data
+    //Note that in versions of TLS prior to 1.1, there was no IV field, and the last ciphertext block of the previous record (the "CBC residue") was used as the IV.
+    printf("\nTLS record data:\n");
+    printf(COLOR_BOLDYELLOW);
+        tls_record.data=&buffer[5];
+        while(i!=tls_record.header.tls_record_length)
+        {
+            printf("%02x ", 0x000000FF&buffer[5+i++]);
+            if ((i%16)==0) printf("\n");
+        }
+    printf(COLOR_RESET);
+    printf("End of TLS record");
+    fflush(stdout);
+    //return full record length (record header +record)
+    return tls_record;
+}
+
+void print_usage(char *bin_name)
+{
+    printf(COLOR_RED"\nError:"COLOR_RESET" argument error.");
+    printf("\nUsage: \n%s <server IP address> <client bound port> <server bound port> [h]",bin_name);
+    printf("\n\th\tTurn on hold mode and forward packets one by one by pressing ENTER.");
+    printf("\n\t\tPackets can be modified by pressing e and ENTER to invoke the Bless hex editor.(sudo apt-get install bless)");
+    printf("\n\t\tOnce the editing is finished, save and close the hex editor to forward the packet.\n");
+    printf(COLOR_RESET);
+}
 
 int main(int argc, char *argv[])
 {
+    printf("\nTransport by Simon Zhou.\nCompiled on %s %s.\n", __DATE__, __TIME__);
+
     int sock_server,sock_client;            // Socket descriptor
     char *buffer;
+    char key_press;
     unsigned long client_ip=0;              //struct client_addr;
+    FILE* fd_tls_record = NULL;
+
+    int data_length;
+	int buffer_offset;
+	struct tls_record tls_record;
+
+	int num_of_socks_ready;
 
 	//initialize RNG
 	int s_time;
@@ -62,8 +178,7 @@ int main(int argc, char *argv[])
     //Test number of arguments
     if ((argc!=4) && (argc!=5))
     {
-        printf(COLOR_RED"\nError:"COLOR_RESET" argument error.");
-        printf("\nUsage: %s <server sock IP address> <port origin> <port destination> [h]\n",argv[0]);
+        print_usage(argv[0]);
         exit(1);
     }
 
@@ -77,8 +192,7 @@ int main(int argc, char *argv[])
         }
         else
         {
-            printf(COLOR_RED"\nError:"COLOR_RESET" argument error.");
-            printf("\nUsage: %s <server sock IP address> <port origin> <port destination> [h]\n",argv[0]);
+            print_usage(argv[0]);
             exit(1);
         }
     }
@@ -87,10 +201,8 @@ int main(int argc, char *argv[])
         hold_mode=0;
     }
 
-    #define BUFFER_SIZE 2048
     buffer=malloc(BUFFER_SIZE+1);
     memset(buffer,0,BUFFER_SIZE+1);
-
 //	//create a socket and connect
 //	if ((sock=get_socket_and_connect_as_clinet(argv[3],argv[4]))<0)
 //	{
@@ -158,10 +270,6 @@ int main(int argc, char *argv[])
 	timeout.tv_sec = 0;
 	timeout.tv_usec = 0;
 
-	int data_length;
-	int i;
-
-	int num_of_socks_ready;
 
     while (1)
     {
@@ -171,8 +279,12 @@ int main(int argc, char *argv[])
         FD_SET(sock_client,&readfds);   //add the client socket to the set
         int numfds=(sock_server>sock_client)?(sock_server+1):(sock_client+1);
         num_of_socks_ready=select(numfds,&readfds,NULL,NULL,&timeout);//get socket status
-        if ((num_of_socks_ready)&&(num_of_socks_ready>0)) printf("\nSocket ready: %d",num_of_socks_ready);
-        if (FD_ISSET(sock_server,&readfds))
+        if ((num_of_socks_ready)&&(num_of_socks_ready>0))
+        {
+            //at this point, data can be read from at least one socket
+            printf("\n\nNumber of socket ready: %d",num_of_socks_ready);
+            //check which socket(s) is ready for reading
+            if (FD_ISSET(sock_server,&readfds))
             {
                 //receive data from client
                 if ((data_length=tcp_receive_as_server(sock_server, buffer, BUFFER_SIZE))<= 0)
@@ -183,39 +295,88 @@ int main(int argc, char *argv[])
 
                 if (data_length!=0)//received data
                 {
-                    if (hold_mode)
+                    if (hold_mode)  //intercept mode on
                     {
                         //print out received data
                         printf("\nReceived "COLOR_GREEN"%d"COLOR_RESET" bytes of data from client:",data_length);
                         printf("\nData in hex format:\n"COLOR_GREEN);//print out in hex format
-                        i=0;
-                        while(i!=data_length)
+                        buffer_offset=0;
+                        while(data_length-buffer_offset)
                         {
-                            printf("%02x ", 0x000000FF&buffer[i++]);
-                            if ((i%16)==0) printf("\n");
+                            tls_record=print_TLS_record(buffer+buffer_offset);
+                            buffer_offset+=tls_record.header.tls_record_length+5;
+                            //data_length-=tls_record.header.tls_record_length+5;
                         }
                         printf(COLOR_RESET);
                         //while(getch());
-                        printf("\nApplication data captured, press ENTER to forward the data.");
+                        printf("\nData captured, press ENTER to forward or e+ENTER to modify.\n");
                         fflush(stdout);
-                        getchar();
-                        //forward data
-                        tcp_send_as_clinet(sock_client,buffer,data_length);
-                        printf("\nData forwarded.");
-                        fflush(stdout);
-                        memset(buffer,0,BUFFER_SIZE+1);
+                        key_press=getchar();
+                        if (key_press=='e') // edit and release
+                        {
+                            getchar();
+                            fd_tls_record = fopen("tls_record.txt","w+");
+                            if(NULL == fd_tls_record)
+                            {
+                                printf("\nError, open/create TLS record log file!");
+                                return 1;
+                            }
+                            else
+                            {
+                                printf("\nTLS record log file created.");
+                            }
+                            fseek(fd_tls_record,0,SEEK_SET);//reposition to start of the file
+                            fwrite(buffer,1,data_length,fd_tls_record);
+                            fclose(fd_tls_record);
+
+                            //edit file
+                            system("sudo bless tls_record.txt");
+
+                            //user may change the tls log file, reload the buffer then send
+                            fd_tls_record=fopen("tls_record.txt","r");
+                            fseek(fd_tls_record,0,SEEK_END);//position to the end of the file
+                            data_length=ftell(fd_tls_record);//ask for postion to tell the size of the modified tls record in the file
+                            rewind(fd_tls_record);//seek back to the beginning
+                            fread(buffer,1,data_length,fd_tls_record);//load modfied tls record to buffer
+
+                            //print out modified data
+                            buffer_offset=0;
+                            printf("\nSending modified TLS record\n");
+                            printf(COLOR_YELLOW);
+                            while(data_length-buffer_offset)
+                            {
+                                printf("%02x ", 0x000000FF&buffer[buffer_offset++]);
+                                if (buffer_offset%16==0) printf("\n");
+                            }
+                            printf(COLOR_RESET);
+                            //forward data
+                            tcp_send_as_clinet(sock_client,buffer,data_length);
+                            printf("\nData forwarded.");
+                            fflush(stdout);
+                        }
+                        else //direct release
+                        {
+                            //forward data
+                            tcp_send_as_clinet(sock_client,buffer,data_length);
+                            printf("\nData forwarded.");
+                            fflush(stdout);
+                            memset(buffer,0,BUFFER_SIZE+1);
+                        }
+
                     }
                     else    //intercept mode off
                     {
                         tcp_send_as_clinet(sock_client,buffer,data_length);
                         //print out received data
                         printf("\nReceived "COLOR_GREEN"%d"COLOR_RESET" bytes of data from client:",data_length);
-                        printf("\nData in hex format:\n"COLOR_GREEN);//print out in hex format
-                        i=0;
-                        while(i!=data_length)
+                        printf("\nData in hex format:"COLOR_GREEN);//print out in hex format
+
+                        buffer_offset=0;
+                        while(data_length-buffer_offset)
                         {
-                            printf("%02x ", 0x000000FF&buffer[i++]);
-                            if ((i%16)==0) printf("\n");
+                            tls_record=print_TLS_record(buffer+buffer_offset);
+                            buffer_offset+=tls_record.header.tls_record_length+5;
+                            //data_length-=tls_record.header.tls_record_length+5;
                         }
                         printf(COLOR_RESET);
                         fflush(stdout);
@@ -228,7 +389,7 @@ int main(int argc, char *argv[])
                     //return 0;
                 }
             }
-        else if (FD_ISSET(sock_client,&readfds))
+            else if (FD_ISSET(sock_client,&readfds))
             {
                 //receive data from server
                 if ((data_length=tcp_receive_as_client(sock_client, buffer, BUFFER_SIZE))<= 0)
@@ -239,39 +400,89 @@ int main(int argc, char *argv[])
 
                 if (data_length!=0)//received data
                 {
-                    if (hold_mode)
+                    if (hold_mode)  //intercept mode on
                     {
                         //print out received data
                         printf("\nReceived "COLOR_GREEN"%d"COLOR_RESET" bytes of data from server:",data_length);
-                        printf("\nData in format:\n"COLOR_GREEN);//print out in hex format
-                        i=0;
-                        while(i!=data_length)
+                        printf("\nData in hex format:\n"COLOR_GREEN);//print out in hex format
+                        buffer_offset=0;
+                        while(data_length-buffer_offset)
                         {
-                            printf("%02x ", 0x000000FF&buffer[i++]);
-                            if ((i%16)==0) printf("\n");
+                            tls_record=print_TLS_record(buffer+buffer_offset);
+                            buffer_offset+=tls_record.header.tls_record_length+5;
+                            //data_length-=tls_record.header.tls_record_length+5;
                         }
                         printf(COLOR_RESET);
                         //while(getch());
-                        printf("\nApplication data captured, press ENTER to forward the data.");
+                        printf("\nData captured, press ENTER to forward or e+ENTER to modify.\n");
                         fflush(stdout);
-                        getchar();
-                        //forward data
-                        data_length=tcp_send_as_server(sock_server,buffer,data_length);
-                        printf("\nData forwarded.");
-                        fflush(stdout);
-                        memset(buffer,0,BUFFER_SIZE+1);
+                        key_press=getchar();
+                        if (key_press=='e') // edit and release
+                        {
+                            getchar();
+                            fd_tls_record = fopen("tls_record.txt","w+");
+                            if(NULL == fd_tls_record)
+                            {
+                                printf("\nError, open/create TLS record log file!");
+                                return 1;
+                            }
+                            else
+                            {
+                                printf("\nTLS record log file created.");
+                            }
+                            fseek(fd_tls_record,0,SEEK_SET);//reposition to start of the file
+                            fwrite(buffer,1,data_length,fd_tls_record);
+                            fclose(fd_tls_record);
+
+                            //edit file
+                            system("sudo bless tls_record.txt");
+
+                            //user may change the tls log file, reload the buffer then send
+                            fd_tls_record=fopen("tls_record.txt","r");
+                            fseek(fd_tls_record,0,SEEK_END);//position to the end of the file
+                            data_length=ftell(fd_tls_record);//ask for postion to tell the size of the modified tls record in the file
+                            rewind(fd_tls_record);//seek back to the beginning
+                            fread(buffer,1,data_length,fd_tls_record);//load modfied tls record to buffer
+
+                            //print out modified data
+                            buffer_offset=0;
+                            printf("\nSending modified TLS record\n");
+                            printf(COLOR_YELLOW);
+                            while(data_length-buffer_offset)
+                            {
+                                printf("%02x ", 0x000000FF&buffer[buffer_offset++]);
+                                if (buffer_offset%16==0) printf("\n");
+                            }
+                            printf(COLOR_RESET);
+                            //forward data
+                            tcp_send_as_server(sock_server,buffer,data_length);
+                            printf("\nData forwarded.");
+                            fflush(stdout);
+                            memset(buffer,0,BUFFER_SIZE+1);
+                        }
+                        else //direct release
+                        {
+                            //forward data
+                            tcp_send_as_server(sock_server,buffer,data_length);
+                            printf("\nData forwarded.");
+                            fflush(stdout);
+                            memset(buffer,0,BUFFER_SIZE+1);
+                        }
+
                     }
                     else    //intercept mode off
                     {
                         data_length=tcp_send_as_server(sock_server,buffer,data_length);
                         //print out received data
                         printf("\nReceived "COLOR_GREEN"%d"COLOR_RESET" bytes of data from server:",data_length);
-                        printf("\nData in format:\n"COLOR_GREEN);//print out in hex format
-                        i=0;
-                        while(i!=data_length)
+                        printf("\nData in hex format:"COLOR_GREEN);//print out in hex format
+
+                        buffer_offset=0;
+                        while(data_length-buffer_offset)
                         {
-                            printf("%02x ", 0x000000FF&buffer[i++]);
-                            if ((i%16)==0) printf("\n");
+                            tls_record=print_TLS_record(buffer+buffer_offset);
+                            buffer_offset+=tls_record.header.tls_record_length+5;
+                            //data_length-=tls_record.header.tls_record_length+5;
                         }
                         printf(COLOR_RESET);
                         fflush(stdout);
@@ -284,9 +495,9 @@ int main(int argc, char *argv[])
                     //return 0;
                 }
             }
-
-            //return -3;//timeout
         }
+            //return -3;//timeout
+    }
 //    int ret;
 //    ret=tcp_send_as_server(sock_server,"Hello",6);
 //    printf("\ntcp send result:%d", ret);
